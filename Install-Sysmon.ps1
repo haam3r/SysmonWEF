@@ -1,13 +1,13 @@
 ﻿function Install-Sysmon {
 <#
 .Synopsis
-   Short description
+   Install Sysmon on multiple machines
 .DESCRIPTION
-   Long description
+   Install Sysmon, with given config, to any number of machines. Additionaly hide the service. Accepts pipeline input for computer names and has credential support.
 .EXAMPLE
-   Example of how to use this cmdlet
+   Install-Sysmon -ComputerName win7x64 -Credential domain\admin
 .EXAMPLE
-   Another example of how to use this cmdlet
+   Get-ADComputer -Filter * | Install-Sysmon -Credential domain\admin
 #>
     [CmdletBinding()]
     Param (
@@ -16,6 +16,7 @@
                    ValueFromPipelineByPropertyName=$True,
                    HelpMessage='One or more computer names')]
         [Alias("ComputerName")]
+        # Parameter is Name so as to accept pipeline input from the Active Directory PowerShell module
         [string]$Name,
 
         [Parameter(Mandatory=$true,
@@ -24,32 +25,47 @@
         [ValidateNotNull()]
         [System.Management.Automation.PSCredential]
         [System.Management.Automation.Credential()]
-        $Credential = [System.Management.Automation.PSCredential]::Empty
+        $Credential = [System.Management.Automation.PSCredential]::Empty,
+
+        # Specifies a path to one or more locations.
+        [Parameter(Mandatory=$false,
+                Position=0,
+                ParameterSetName="Path",
+                ValueFromPipeline=$true,
+                ValueFromPipelineByPropertyName=$true,
+                HelpMessage="Where to put Sysmon. Default is ProgramData\sysmon. Expecting full path.")]
+        [Alias("PSPath")]
+        [ValidateNotNullOrEmpty()]
+        [string[]]
+        $Path = "$env:SystemDrive\ProgramData\sysmon"
+
     )
+    BEGIN {
+        Write-Verbose -Message "Running on these machines: $Name"
+    }
 
     PROCESS {
-        Write-Verbose -Message "Received list: $Name"
         foreach ($Computer in $Name) {
             Write-Verbose -Message "Running on $Computer"
 
             Invoke-Command -ComputerName $Computer -Credential $Credential -ScriptBlock {
-        
+
                 Write-Verbose -Message "Create sysmon directory if needed"
-                if (-not (Test-Path $env:SystemDrive\ProgramData\sysmon)) {
-                    New-Item -Path $env:SystemDrive\ProgramData\sysmon -ItemType Directory
+                if (-not (Test-Path $Path)) {
+                    New-Item -Path $Path -ItemType Directory
                 }
-                cd $env:SystemDrive\ProgramData\sysmon
+                Set-Location -Path $Path
 
                 Write-Verbose -Message "Download the sysmon config file"
-                (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml',"$env:SystemDrive\ProgramData\sysmon\sysmonconfig-export.xml")
+                (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml',"$Path\sysmonconfig-export.xml")
 
                 Write-Verbose -Message "Download and install sysmon"
                 if ( ((Get-WmiObject Win32_OperatingSystem).OSArchitecture) -eq "64-bit") {
-                    (New-Object System.Net.WebClient).DownloadFile('https://live.sysinternals.com/Sysmon64.exe','C:\ProgramData\sysmon\sysmon64.exe')
+                    (New-Object System.Net.WebClient).DownloadFile('https://live.sysinternals.com/Sysmon64.exe','$Path\sysmon64.exe')
                     .\sysmon64.exe -accepteula -i sysmonconfig-export.xml
                 }
                 else {
-                    (new-object System.Net.WebClient).DownloadFile('https://live.sysinternals.com/Sysmon.exe','C:\ProgramData\sysmon\sysmon.exe')
+                    (new-object System.Net.WebClient).DownloadFile('https://live.sysinternals.com/Sysmon.exe','$Path\sysmon.exe')
                     .\sysmon.exe -accepteula -i sysmonconfig-export.xml
                 }
 
@@ -63,6 +79,10 @@
                 # sc.exe sdset Sysmon 'D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)'
             }
         }
+    }
+
+    END {
+
     }
 }
 
